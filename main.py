@@ -7,7 +7,7 @@ class PokerBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-        super().__init__(command_prefix=config.COMMAND_PREFIX, intents=intents)
+        super().__init__(command_prefix=config.COMMAND_PREFIX, intents=intents, help_command=None)
 
     async def setup_hook(self):
         print("⚙️ Loading Poker Cog...")

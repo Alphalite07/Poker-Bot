@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 from engine.game_state import AdvancedPokerGame
 from engine.card import CardArt
+from engine.database import DatabaseManager
 
 class RaiseModal(discord.ui.Modal, title='Raise Amount'):
     amount = discord.ui.TextInput(
@@ -11,6 +12,7 @@ class RaiseModal(discord.ui.Modal, title='Raise Amount'):
         placeholder='e.g., 100',
         required=True
     )
+
     def __init__(self, view):
         super().__init__()
         self.view = view
@@ -33,6 +35,56 @@ class RaiseModal(discord.ui.Modal, title='Raise Amount'):
             await self.view.render_table(interaction)
         except ValueError:
             await interaction.response.send_message("Invalid number.", ephemeral=True)
+
+class HelpDropdown(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label='Commands', description='List of all bot commands', emoji='⌨️'),
+            discord.SelectOption(label='Game Modes', description='Texas Holdem, Omaha, Strip', emoji='🕹️'),
+            discord.SelectOption(label='Hand Rankings', description='What beats what at showdown?', emoji='🏆')
+        ]
+        super().__init__(placeholder='Choose a help category...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        embed = discord.Embed(color=0x1f8b4c)
+        
+        if self.values[0] == 'Commands':
+            embed.title = "⌨️ Bot Commands"
+            embed.description = (
+                "`!poker_create [mode]` - Initializes a new lobby.\n"
+                "`!join` - Take a seat at the active table.\n"
+                "`!start` - Deals the hole cards and starts the loop.\n"
+                "`!help` - Opens this interactive menu."
+            )
+        elif self.values[0] == 'Game Modes':
+            embed.title = "🕹️ Game Modes"
+            embed.description = (
+                "**texas_holdem:** The classic. 2 hole cards, 5 community cards.\n\n"
+                "**omaha:** 4 hole cards. You MUST use exactly 2 of your hole cards and 3 community cards to make a hand.\n\n"
+                "**strip:** (18+) Losers remove an item from their visual wardrobe. Requires an age-restricted NSFW channel."
+            )
+        elif self.values[0] == 'Hand Rankings':
+            embed.title = "🏆 Poker Hand Rankings"
+            embed.description = (
+                "**1.** Royal Flush\n"
+                "**2.** Straight Flush\n"
+                "**3.** Four of a Kind\n"
+                "**4.** Full House\n"
+                "**5.** Flush\n"
+                "**6.** Straight\n"
+                "**7.** Three of a Kind\n"
+                "**8.** Two Pair\n"
+                "**9.** One Pair\n"
+                "**10.** High Card"
+            )
+            
+        # Edit the message with the new selected category
+        await interaction.response.edit_message(embed=embed)
+
+class HelpView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+        self.add_item(HelpDropdown())
 
 class AnimatedPokerView(discord.ui.View):
     def __init__(self, game):
@@ -116,6 +168,40 @@ class PokerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.games = {}
+        self.db = DatabaseManager()
+
+    @commands.command(name="balance", aliases=["bal", "stats", "chips"])
+    async def balance(self, ctx):
+        # 1. Pull their permanent stats from SQLite
+        chips, wardrobe = self.db.load_player(ctx.author.id)
+        
+        # 2. Build a polished player ID card
+        embed = discord.Embed(
+            title=f"🏦 Casino Vault",
+            description=f"Player record for **{ctx.author.display_name}**",
+            color=0xffd700 # Shiny gold
+        )
+        
+        # Grab the user's profile picture dynamically
+        if ctx.author.display_avatar:
+            embed.set_thumbnail(url=ctx.author.display_avatar.url)
+            
+        embed.add_field(name="Total Chips", value=f"🪙 `{chips}`", inline=True)
+        embed.add_field(name="Wardrobe Items", value=f"👕 `{wardrobe} / 5`", inline=True)
+        
+        await ctx.send(embed=embed)
+
+    @commands.command(name="help")
+    async def custom_help(self, ctx):
+        embed = discord.Embed(
+            title="🃏 Advanced Poker Engine Help",
+            description="Welcome to the high-stakes table! Use the dropdown menu below to navigate the rules, modes, and commands.",
+            color=0x2b2d31
+        )
+        embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/186/186323.png")
+        
+        view = HelpView()
+        await ctx.send(embed=embed, view=view)
 
     @commands.command(name="poker_create")
     async def poker_create(self, ctx, mode="texas_holdem"):
@@ -163,5 +249,28 @@ class PokerCog(commands.Cog):
         view = AnimatedPokerView(game)
         await view.render_table(ctx)
 
+    @commands.command(name="daily")
+    async def daily(self, ctx):
+        import time
+        current_time = time.time()
+        success, time_left = self.db.claim_daily(ctx.author.id, current_time)
+        
+        if success:
+            embed = discord.Embed(
+                title="🎁 Daily Reward Claimed!",
+                description="The casino has fronted you **500 chips**! Use `!balance` to check your vault.",
+                color=0x2ecc71
+            )
+            await ctx.send(embed=embed)
+        else:
+            hours, remainder = divmod(int(time_left), 3600)
+            minutes, _ = divmod(remainder, 60)
+            embed = discord.Embed(
+                title="⏳ Not so fast!",
+                description=f"You've already claimed your daily bailout. Come back in **{hours}h {minutes}m**.",
+                color=0xe74c3c
+            )
+            await ctx.send(embed=embed)
+            
 async def setup(bot):
     await bot.add_cog(PokerCog(bot))
