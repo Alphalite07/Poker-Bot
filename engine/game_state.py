@@ -1,22 +1,28 @@
 from .card import Deck
 from .evaluator import PokerEvaluator
 from .pot_manager import PotManager
+from .database import DatabaseManager
 
 class PokerPlayer:
     def __init__(self, user_id, name, chips=1000):
         self.user_id = user_id
         self.name = name
         self.chips = chips
-        self.clothing_items = 5
+        self.wardrobe = ['🧥 Jacket', '👔 Shirt', '👖 Pants', '🧦 Socks', '🩲 Underwear']
         self.hand = []
         self.current_bet = 0
         self.has_folded = False
         self.has_acted = False
 
+    @property
+    def clothing_items(self):
+        return len(self.wardrobe)
+
 class AdvancedPokerGame:
     def __init__(self, channel_id, mode="texas_holdem"):
         self.channel_id = channel_id
         self.mode = mode
+        self.db = DatabaseManager()
         self.players = []
         self.deck = Deck()
         self.community_cards = []
@@ -28,7 +34,10 @@ class AdvancedPokerGame:
 
     def add_player(self, user_id, name):
         if any(p.user_id == user_id for p in self.players): return False
-        self.players.append(PokerPlayer(user_id, name))
+        saved_chips, saved_wardrobe = self.db.load_player(user_id)
+        new_player = PokerPlayer(user_id, name, chips=saved_chips)
+        new_player.wardrobe = ['🧥 Jacket', '👔 Shirt', '👖 Pants', '🧦 Socks', '🩲 Underwear'][:saved_wardrobe]
+        self.players.append(new_player)
         return True
 
     def start_game(self):
@@ -53,10 +62,10 @@ class AdvancedPokerGame:
 
     def check_phase_complete(self):
         active_players = [p for p in self.players if not p.has_folded]
-        if len(active_players) == 1: return True # Everyone else folded
+        if len(active_players) == 1: return True
         for p in active_players:
             if not p.has_acted or p.current_bet < self.current_bet_level:
-                if p.chips > 0: return False # Still needs to act
+                if p.chips > 0: return False
         return True
 
     def advance_phase(self):
@@ -94,19 +103,25 @@ class AdvancedPokerGame:
         if len(active) == 1:
             winner = active[0]
             winner.chips += self.total_pot_visual
-            return f"🏆 **{winner.name}** wins {self.total_pot_visual} by default (everyone folded)!"
+            result = f"🏆 **{winner.name}** wins {self.total_pot_visual} chips by default (everyone folded)!"
+        else:
+            player_scores = [(p, PokerEvaluator.find_best_hand(p.hand, self.community_cards, self.mode)) for p in active]
+            player_scores.sort(key=lambda x: (x[1][0], x[1][1]), reverse=True)
+            winner = player_scores[0][0]
+            
+            winner.chips += self.total_pot_visual
+            result = f"🏆 **{winner.name}** wins a total of **{self.total_pot_visual} chips** at showdown!"
+            
+            if self.mode == "strip":
+                for p in active:
+                    if p != winner and p.wardrobe:
+                        lost_item = p.wardrobe.pop(0)
+                        result += f"\n📉 👙 **{p.name}** lost the hand and removed their {lost_item}!"
+                        if not p.wardrobe: 
+                            result += f"\n🚨 **{p.name}** is entirely stripped and out of the game!"
 
-        player_scores = [(p, PokerEvaluator.find_best_hand(p.hand, self.community_cards, self.mode)) for p in active]
-        player_scores.sort(key=lambda x: (x[1][0], x[1][1]), reverse=True)
-        winner = player_scores[0][0]
-        
-        winner.chips += self.total_pot_visual
-        result = f"🏆 **{winner.name}** wins a total of **{self.total_pot_visual} chips** at showdown!"
-        
-        if self.mode == "strip":
-            for p in active:
-                if p != winner:
-                    p.clothing_items -= 1
-                    result += f"\n📉 👙 **{p.name}** lost the hand and removed an item! ({p.clothing_items} items left)"
-                    if p.clothing_items <= 0: result += f"\n🚨 **{p.name}** is entirely stripped!"
+        # Save everyone's updated chips and wardrobe to the DB
+        for p in self.players:
+            self.db.save_player(p.user_id, p.chips, p.clothing_items)
+
         return result

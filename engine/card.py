@@ -8,7 +8,6 @@ class Card:
     def __init__(self, rank, suit):
         self.rank = rank
         self.suit = suit
-
     def __str__(self):
         return f"{self.rank}{SUIT_EMOJIS[self.suit]}"
 
@@ -16,15 +15,13 @@ class Deck:
     def __init__(self):
         self.cards = [Card(r, s) for r in RANKS for s in SUITS]
         random.shuffle(self.cards)
-
     def deal(self, num):
         return [self.cards.pop() for _ in range(num)]
 
 class CardArt:
     @staticmethod
     def render(cards):
-        if not cards:
-            return "```\n[ No Cards Dealt ]\n```"
+        if not cards: return "```\n[ No Cards Dealt ]\n```"
         ascii_art = ["", "", "", "", ""]
         for c in cards:
             r_top = c.rank.ljust(2) 
