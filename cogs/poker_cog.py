@@ -11,7 +11,6 @@ class RaiseModal(discord.ui.Modal, title='Raise Amount'):
         placeholder='e.g., 100',
         required=True
     )
-
     def __init__(self, view):
         super().__init__()
         self.view = view
@@ -41,7 +40,6 @@ class AnimatedPokerView(discord.ui.View):
         self.game = game
 
     async def render_table(self, ctx_or_interaction):
-        # 1. Handle the Showdown phase first
         if self.game.round_phase == "SHOWDOWN":
             result = self.game.process_showdown()
             embed = discord.Embed(title="🏁 SHOWDOWN 🏁", description=result, color=0xffd700)
@@ -51,12 +49,10 @@ class AnimatedPokerView(discord.ui.View):
                 await ctx_or_interaction.send(embed=embed)
             return
 
-        # 2. Setup the visual table elements (THIS IS WHERE YOUR NEW CODE WENT)
         is_interaction = isinstance(ctx_or_interaction, discord.Interaction)
         table_art = CardArt.render(self.game.community_cards)
         
-        # Calculate visual coin stacks (1 emoji per 100 chips, max 10 emojis)
-        stack_count = min(max(1, self.game.total_pot_visual // 100), 10)
+        stack_count = min(max(1, self.game.total_pot_visual // 100), 10) if self.game.total_pot_visual > 0 else 0
         pot_visual = "🪙" * stack_count
         
         embed = discord.Embed(title=f"🟩 {self.game.mode.upper()} - {self.game.round_phase} 🟩", color=0x1f8b4c)
@@ -64,7 +60,6 @@ class AnimatedPokerView(discord.ui.View):
         embed.add_field(name="Total Pot", value=f"{pot_visual} `{self.game.total_pot_visual}`", inline=True)
         embed.add_field(name="Call Amount", value=f"💰 `{self.game.current_bet_level}`", inline=True)
         
-        # 3. Generate the player roster and assets below the table
         player_status = []
         for p in self.game.players:
             asset = f"👕 x{p.clothing_items}" if self.game.mode == "strip" else f"🪙 {p.chips}"
@@ -74,7 +69,6 @@ class AnimatedPokerView(discord.ui.View):
             
         embed.add_field(name="Table Roster", value="\n".join(player_status), inline=False)
         
-        # 4. Send or Edit the message in Discord
         if is_interaction:
             await ctx_or_interaction.message.edit(embed=embed, view=self)
         else:
@@ -87,7 +81,7 @@ class AnimatedPokerView(discord.ui.View):
         
         p = self.game.current_player
         to_call = self.game.current_bet_level - p.current_bet
-        actual_call = min(to_call, p.chips) # Handle all-in via call
+        actual_call = min(to_call, p.chips) 
         
         p.chips -= actual_call
         p.current_bet += actual_call
@@ -111,8 +105,6 @@ class AnimatedPokerView(discord.ui.View):
         
         self.game.current_player.has_folded = True
         self.game.next_turn()
-        
-        # Check if only one player is left after folding
         active = [p for p in self.game.players if not p.has_folded]
         if len(active) == 1:
             self.game.round_phase = "SHOWDOWN"
@@ -153,42 +145,23 @@ class PokerCog(commands.Cog):
         for p in game.players:
             user = await self.bot.fetch_user(p.user_id)
             hand_str = " ".join([str(c) for c in p.hand])
-            await user.send(f"🎴 Your hole cards in #{ctx.channel.name}: {hand_str}")
+            try:
+                await user.send(f"🎴 Your hole cards in #{ctx.channel.name}: {hand_str}")
+            except discord.Forbidden:
+                await ctx.send(f"⚠️ Could not DM {p.name}. Ensure DMs are open!")
         
-        view = AnimatedPokerView(game)
-        @commands.command(name="start")
-    async def start(self, ctx):
-        game = self.games.get(ctx.channel.id)
-        if not game or not game.start_game():
-            return await ctx.send("Cannot start. Need at least 2 players.")
-        
-        for p in game.players:
-            user = await self.bot.fetch_user(p.user_id)
-            hand_str = " ".join([str(c) for c in p.hand])
-            await user.send(f"🎴 Your hole cards in #{ctx.channel.name}: {hand_str}")
-        
-        # --- THE DEALING ANIMATION ---
         anim_msg = await ctx.send("🪙 **Shuffling the deck...**")
         await asyncio.sleep(1)
-        
-        frames = [
-            "| 🎴          |", 
-            "|   🎴        |", 
-            "|     🎴      |", 
-            "|       🎴    |", 
-            "|         🎴  |"
-        ]
-        
-        for _ in range(2): # Pitch cards twice
+        frames = ["| 🎴          |", "|   🎴        |", "|     🎴      |", "|       🎴    |", "|         🎴  |"]
+        for _ in range(2): 
             for frame in frames:
                 await anim_msg.edit(content=f"🃏 **Pitching hole cards...**\n`{frame}`")
-                await asyncio.sleep(0.2) # Fast 200ms frame rate
+                await asyncio.sleep(0.2) 
                 
         await anim_msg.delete()
-        # -----------------------------
         
         view = AnimatedPokerView(game)
         await view.render_table(ctx)
-        
+
 async def setup(bot):
     await bot.add_cog(PokerCog(bot))
