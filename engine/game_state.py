@@ -33,12 +33,19 @@ class AdvancedPokerGame:
         self.round_phase = "PREFLOP"
 
     def add_player(self, user_id, name):
-        if any(p.user_id == user_id for p in self.players): return False
+        # 1. Enforce a hard cap of 8 maximum players at once
+        if len(self.players) >= 8: 
+            return "FULL"
+            
+        # 2. Prevent the same person from sitting down twice
+        if any(p.user_id == user_id for p in self.players): 
+            return "EXISTS"
+        
         saved_chips, saved_wardrobe = self.db.load_player(user_id)
         new_player = PokerPlayer(user_id, name, chips=saved_chips)
         new_player.wardrobe = ['🧥 Jacket', '👔 Shirt', '👖 Pants', '🧦 Socks', '🩲 Underwear'][:saved_wardrobe]
         self.players.append(new_player)
-        return True
+        return "SUCCESS"
 
     def start_game(self):
         if len(self.players) < 2: return False

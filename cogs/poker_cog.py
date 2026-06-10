@@ -231,11 +231,17 @@ class PokerCog(commands.Cog):
     @commands.command(name="join")
     async def join(self, ctx):
         game = self.games.get(ctx.channel.id)
-        if not game: return await ctx.send("No game running here. Use `!poker_create`.")
-        if game.add_player(ctx.author.id, ctx.author.display_name):
-            await ctx.send(f"🎟️ **{ctx.author.display_name}** joined the table.")
-        else:
-            await ctx.send("You are already seated!")
+        if not game: 
+            return await ctx.send("No game running here. Use `!poker_create`.")
+            
+        status = game.add_player(ctx.author.id, ctx.author.display_name)
+        
+        if status == "SUCCESS":
+            await ctx.send(f"🎟️ **{ctx.author.display_name}** joined the table. (`{len(game.players)}/8`)")
+        elif status == "FULL":
+            await ctx.send("❌ This table is full! Max 8 players can play at once.")
+        elif status == "EXISTS":
+            await ctx.send("⚠️ You are already seated at this table!")
 
     @commands.command(name="start")
     async def start(self, ctx):
