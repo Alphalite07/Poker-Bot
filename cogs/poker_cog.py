@@ -39,9 +39,10 @@ class RaiseModal(discord.ui.Modal, title='Raise Amount'):
 class HelpDropdown(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label='Commands', description='List of all bot commands', emoji='⌨️'),
-            discord.SelectOption(label='Game Modes', description='Texas Holdem, Omaha, Strip', emoji='🕹️'),
-            discord.SelectOption(label='Hand Rankings', description='What beats what at showdown?', emoji='🏆')
+            discord.SelectOption(label='Commands', description='Master the table controls', emoji='⌨️'),
+            discord.SelectOption(label='Game Modes', description='Texas Holdem, Omaha & VIP Strip', emoji='🕹️'),
+            discord.SelectOption(label='Hand Rankings', description='What beats what at showdown?', emoji='🏆'),
+            discord.SelectOption(label='Casino Vault', description='Bankrolls, Dailies, and Economy', emoji='🏦')
         ]
         super().__init__(placeholder='Choose a help category...', min_values=1, max_values=1, options=options)
 
@@ -51,35 +52,49 @@ class HelpDropdown(discord.ui.Select):
         if self.values[0] == 'Commands':
             embed.title = "⌨️ Bot Commands"
             embed.description = (
-                "`!poker_create [mode]` - Initializes a new lobby.\n"
-                "`!join` - Take a seat at the active table.\n"
-                "`!start` - Deals the hole cards and starts the loop.\n"
-                "`!help` - Opens this interactive menu."
+                "**Lobby & Games**\n"
+                "🟢 `!poker_create [mode]` - Opens a new table. Modes: `texas_holdem`, `omaha`, `strip`\n"
+                "🟢 `!join` - Grab an empty seat at the current table.\n"
+                "🟢 `!start` - The dealer pitches the cards and the game begins!\n\n"
+                "**Economy & Profile**\n"
+                "🟡 `!balance` (or `!bal`) - Check your total casino chips and wardrobe.\n"
+                "🟡 `!daily` - Claim your free 500-chip bailout every 24 hours.\n\n"
+                "**Utilities**\n"
+                "🔵 `!help` - Opens this interactive menu."
             )
         elif self.values[0] == 'Game Modes':
-            embed.title = "🕹️ Game Modes"
+            embed.title = "🕹️ Game Modes Explained"
             embed.description = (
-                "**texas_holdem:** The classic. 2 hole cards, 5 community cards.\n\n"
-                "**omaha:** 4 hole cards. You MUST use exactly 2 of your hole cards and 3 community cards to make a hand.\n\n"
-                "**strip:** (18+) Losers remove an item from their visual wardrobe. Requires an age-restricted NSFW channel."
+                "🤠 **Texas Hold'em (`texas_holdem`)**\n"
+                "The gold standard. You get **2 hole cards** and share **5 community cards**. Make the best 5-card hand.\n\n"
+                "🌪️ **Omaha (`omaha`)**\n"
+                "High action. You get **4 hole cards**. You *must* use exactly **2** of your hole cards and **3** community cards to win.\n\n"
+                "👙 **Strip Poker (`strip`)**\n"
+                "*(Requires NSFW channel)*. No chips? No problem. Every player starts with 5 clothing items. Lose the hand, lose an item. The last one dressed wins!"
             )
         elif self.values[0] == 'Hand Rankings':
             embed.title = "🏆 Poker Hand Rankings"
             embed.description = (
-                "**1.** Royal Flush\n"
-                "**2.** Straight Flush\n"
-                "**3.** Four of a Kind\n"
-                "**4.** Full House\n"
-                "**5.** Flush\n"
-                "**6.** Straight\n"
-                "**7.** Three of a Kind\n"
-                "**8.** Two Pair\n"
-                "**9.** One Pair\n"
-                "**10.** High Card"
+                "**1. Royal Flush** 👑 (`A♠ K♠ Q♠ J♠ 10♠`)\n"
+                "**2. Straight Flush** 🌟 (`9♥ 8♥ 7♥ 6♥ 5♥`)\n"
+                "**3. Four of a Kind** 🍀 (`8♣ 8♠ 8♦ 8♥ 4♠`)\n"
+                "**4. Full House** 🏠 (`J♥ J♣ J♠ 4♦ 4♠`)\n"
+                "**5. Flush** 💧 (5 cards of same suit)\n"
+                "**6. Straight** 🛤️ (5 cards in sequence)\n"
+                "**7. Three of a Kind** 🎲 (`7♠ 7♦ 7♣ K♥ 2♠`)\n"
+                "**8. Two Pair** ✌️ (`9♠ 9♥ 5♣ 5♦ A♠`)\n"
+                "**9. One Pair** 🍒 (`10♥ 10♣ Q♠ 4♦ 2♣`)\n"
+                "**10. High Card** 🃏 (Highest single card wins)"
+            )
+        elif self.values[0] == 'Casino Vault':
+            embed.title = "🏦 The Casino Economy"
+            embed.description = (
+                "Your chips are saved **permanently** to the local SQLite database. Even if the bot restarts, your bankroll is safe.\n\n"
+                "💸 **Betting:** If you run out of chips mid-game, you can go *All-In* and a side-pot will be mathematically created for you.\n"
+                "🎁 **Bailouts:** Hit rock bottom? Use `!daily` once a day to get a free 500 chips from the house."
             )
             
-        # Edit the message with the new selected category
-        await interaction.response.edit_message(embed=embed)
+        await interaction.response.edit_message(embed=embed)age(embed=embed)
 
 class HelpView(discord.ui.View):
     def __init__(self):
