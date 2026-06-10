@@ -211,6 +211,80 @@ class AnimatedPokerView(discord.ui.View):
         await interaction.response.defer()
         await self.render_table(interaction)
 
+# Insert this near the other View classes inside cogs/poker_cog.py
+
+class AdvancedShopDropdown(discord.ui.Select):
+    def __init__(self, db, user_id):
+        self.db = db
+        self.user_id = user_id
+        options = [
+            discord.SelectOption(label='💍 Luck Ring', description='Boosts slots/luck parameters slightly (500 chips)', value='Luck Ring_500'),
+            discord.SelectOption(label='🐱 Casino Cat', description='A cute companion pet for your profile (1500 chips)', value='Casino Cat_1500'),
+            discord.SelectOption(label='🐶 Poker Hound', description='The ultimate card-playing companion pet (3000 chips)', value='Poker Hound_3000')
+        ]
+        super().__init__(placeholder='Browse Items & Companions...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your transaction window!", ephemeral=True)
+            
+        item_name, cost = self.values[0].split('_')
+        cost = int(cost)
+        
+        chips, wardrobe, inventory = self.db.load_player(self.user_id)
+        if chips < cost:
+            return await interaction.response.send_message(f"❌ Transaction declined. You need `{cost}` chips.", ephemeral=True)
+            
+        if item_name in inventory:
+            return await interaction.response.send_message(f"⚠️ You already own a `{item_name}`!", ephemeral=True)
+
+        # Deduct currency and append asset item to array storage
+        self.db.cursor.execute('UPDATE players SET chips = chips - ? WHERE user_id = ?', (cost, str(self.user_id)))
+        inventory.append(item_name)
+        self.db.save_inventory(self.user_id, inventory)
+        
+        await interaction.response.send_message(f"🛍️ **Purchased!** Added **`{item_name}`** to your vault inventory.", ephemeral=False)
+
+class AdvancedShopView(discord.ui.View):
+    def __init__(self, db, user_id):
+        super().__init__(timeout=60)
+        self.add_item(AdvancedShopDropdown(db, user_id))
+
+class RealItemTradeView(discord.ui.View):
+    def __init__(self, db, sender, receiver, chips_offered, item_requested):
+        super().__init__(timeout=60)
+        self.db = db
+        self.sender = sender
+        self.receiver = receiver
+        self.chips = chips_offered
+        self.item = item_requested
+
+    @discord.ui.button(label="Accept Swap", style=discord.ButtonStyle.success, emoji="🤝")
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.receiver.id:
+            return await interaction.response.send_message("You are not the recipient of this barter offer.", ephemeral=True)
+            
+        # Verify absolute storage constraints for both users
+        s_chips, _, s_inv = self.db.load_player(self.sender.id)
+        _, _, r_inv = self.db.load_player(self.receiver.id)
+
+        if s_chips < self.chips:
+            return await interaction.response.edit_message(content="❌ Trade failed: Sender no longer has enough chips.", view=None)
+        if self.item not in r_inv:
+            return await interaction.response.edit_message(content=f"❌ Trade failed: {self.receiver.display_name} no longer owns the requested item.", view=None)
+
+        # Atomic item swap inside SQLite array configurations
+        self.db.cursor.execute('UPDATE players SET chips = chips - ? WHERE user_id = ?', (self.chips, str(self.sender.id)))
+        self.db.cursor.execute('UPDATE players SET chips = chips + ? WHERE user_id = ?', (self.chips, str(self.receiver.id)))
+        
+        r_inv.remove(self.item)
+        s_inv.append(self.item)
+        
+        self.db.save_inventory(self.sender.id, s_inv)
+        self.db.save_inventory(self.receiver.id, r_inv)
+
+        await interaction.response.edit_message(content=f"📦 **Trade Executed!** {self.sender.mention} bartered `{self.chips}` chips to {self.receiver.mention} in exchange for **`{self.item}`**!", view=None)
+
 class PokerCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -415,6 +489,89 @@ class PokerCog(commands.Cog):
             
         embed = discord.Embed(title="🎰 Casino Slots", description=f"**{ctx.author.display_name}** bet `{bet}` chips.\n\n# [ {result[0]} | {result[1]} | {result[2]} ]\n\n{status}", color=0xe67e22)
         await msg.edit(content=None, embed=embed)        
+
+    # --- Upgraded MMO Interactions & Systems ---
+
+    @commands.command(name="store", aliases=["market"])
+    async def open_mmo_shop(self, ctx):
+        embed = discord.Embed(
+            title="🐾 Casino Vault & Pet Emporium",
+            description="Acquire dynamic boosters and collectible companions to display on your server profile.",
+            color=0x9b59b6
+        )
+        view = AdvancedShopView(self.db, ctx.author.id)
+        await ctx.send(embed=embed, view=view)
+
+    @commands.command(name="inventory", aliases=["inv", "items"])
+    async def view_inventory(self, ctx):
+        chips, _, inventory = self.db.load_player(ctx.author.id)
+        
+        # Adjust game parameters dynamically based on possession of the Luck Ring
+        luck_boost = "Active (+0.00000001% Placebo Boost)" if "Luck Ring" in inventory else "None"
+        
+        embed = discord.Embed(title=f"🎒 {ctx.author.display_name}'s Inventory", color=0x34495e)
+        
+        items_display = "\n".join([f"• ✨ `{item}`" for item in inventory]) if inventory else "*Empty Vault*"
+        embed.add_field(name="Collected Items & Pets", value=items_display, inline=False)
+        embed.add_field(name="Current Luck Value Modifier", value=f"🔹 `{luck_boost}`", inline=True)
+        
+        if ctx.author.display_avatar:
+            embed.set_thumbnail(url=ctx.author.display_avatar.url)
+            
+        await ctx.send(embed=embed)
+
+    @commands.command(name="barter")
+    async def barter_swap(self, ctx, target: discord.Member, chips_offered: int, *, item_to_request: str):
+        if target.id == ctx.author.id: return await ctx.send("You cannot item barter with yourself.")
+        
+        _, _, r_inv = self.db.load_player(target.id)
+        if item_to_request not in r_inv:
+            return await ctx.send(f"❌ {target.display_name} does not have a `{item_to_request}` in their inventory vector.")
+
+        view = RealItemTradeView(self.db, ctx.author, target, chips_offered, item_to_request)
+        await ctx.send(
+            content=f"⚖️ **Barter Offer Raised!** {ctx.author.mention} wants to swap **🪙 {chips_offered} chips** for {target.mention}'s **`{item_to_request}`**.", 
+            view=view
+        )
+
+    # --- Decentralized Prediction Engine Modules (Polymarket Framework) ---
+
+    @commands.command(name="match_create", aliases=["mc"])
+    async def custom_match_build(self, ctx, question: str, option_a: str, option_b: str):
+        match_id = self.db.create_match(ctx.author.id, question, option_a, option_b)
+        
+        embed = discord.Embed(
+            title=f"🔮 New Polymarket Window Opened! (Match #{match_id})",
+            description=f"### {question}\n\n🅰️ **{option_a}**\n🅱️ **{option_b}**\n\n*Use `!match_bet {match_id} [A/B] [wager]` to back a outcome.*",
+            color=0xe74c3c
+        )
+        await ctx.send(embed=embed)
+
+    @commands.command(name="match_bet", aliases=["mb"])
+    async def wager_custom_match(self, ctx, match_id: int, choice: str, amount: int):
+        if amount <= 0: return await ctx.send("Wager value must be positive.")
+        
+        status = self.db.place_match_wager(ctx.author.id, ctx.author.display_name, match_id, choice, amount)
+        if status == "SUCCESS":
+            await ctx.send(f"✅ Wager registered! **{ctx.author.display_name}** dropped `🪙 {amount}` into choice **{choice.upper()}** for Match `#{match_id}`.")
+        elif status == "CLOSED":
+            await ctx.send("❌ This prediction market has already locked or been resolved.")
+        elif status == "NO_CHIPS":
+            await ctx.send("❌ Insufficient vault funds to clear this market wager.")
+
+    @commands.command(name="match_resolve", aliases=["mr"])
+    async def execute_resolution(self, ctx, match_id: int, winning_option: str):
+        # Secure endpoint check: Only the match creator can close out the prediction vector
+        ctx.value_cursor = self.db.cursor
+        ctx.value_cursor.execute('SELECT creator_id FROM custom_predictions WHERE id = ?', (match_id,))
+        match = ctx.value_cursor.fetchone()
+        
+        if not match: return await ctx.send("Match market context missing.")
+        if match[0] != str(ctx.author.id):
+            return await ctx.send("❌ Access Denied. Only the match organizer can resolve this outcome.")
+
+        resolution_report = self.db.resolve_match(match_id, winning_option)
+        await ctx.send(content=resolution_report)
 
 async def setup(bot):
     await bot.add_cog(PokerCog(bot))
