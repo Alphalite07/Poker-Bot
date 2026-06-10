@@ -94,7 +94,7 @@ class HelpDropdown(discord.ui.Select):
                 "🎁 **Bailouts:** Hit rock bottom? Use `!daily` once a day to get a free 500 chips from the house."
             )
             
-        await interaction.response.edit_message(embed=embed)age(embed=embed)
+        await interaction.response.edit_message(embed=embed)
 
 class HelpView(discord.ui.View):
     def __init__(self):
