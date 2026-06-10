@@ -14,11 +14,17 @@ class DatabaseManager:
                 wardrobe_items INTEGER
             )
         ''')
-        # Safely upgrade the existing database to include daily tracking without data loss
+        # Safely upgrade existing database
         try:
             self.cursor.execute('ALTER TABLE players ADD COLUMN last_daily REAL DEFAULT 0.0')
         except sqlite3.OperationalError:
-            pass # Column already exists, safe to ignore
+            pass 
+            
+        try:
+            self.cursor.execute("ALTER TABLE players ADD COLUMN inventory TEXT DEFAULT '{}'")
+        except sqlite3.OperationalError:
+            pass
+            
         self.conn.commit()
 
     def load_player(self, user_id, starting_chips=1000):

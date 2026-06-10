@@ -95,6 +95,38 @@ class HelpDropdown(discord.ui.Select):
             )
             
         await interaction.response.edit_message(embed=embed)
+class ShopDropdown(discord.ui.Select):
+    def __init__(self, db, user_id):
+        self.db = db
+        self.user_id = user_id
+        options = [
+            discord.SelectOption(label='🍸 Martini', description='Buy a drink (100 chips)', value='martini_100'),
+            discord.SelectOption(label='🃏 Golden Deck', description='Fancy cards (1,000 chips)', value='deck_1000'),
+            discord.SelectOption(label='👑 VIP Casino Badge', description='Ultimate flex (5,000 chips)', value='vip_5000')
+        ]
+        super().__init__(placeholder='Browse the Casino Shop...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your shopping cart!", ephemeral=True)
+            
+        item_id, cost_str = self.values[0].split('_')
+        cost = int(cost_str)
+        
+        chips, _ = self.db.load_player(self.user_id)
+        if chips < cost:
+            return await interaction.response.send_message(f"❌ You need {cost} chips to buy this. You only have {chips}.", ephemeral=True)
+            
+        # Deduct chips (We will expand inventory saving later, but this charges them)
+        self.db.cursor.execute('UPDATE players SET chips = chips - ? WHERE user_id = ?', (cost, str(self.user_id)))
+        self.db.conn.commit()
+        
+        await interaction.response.send_message(f"🛒 **Purchase successful!** You bought the `{item_id}` for {cost} chips.", ephemeral=False)
+
+class ShopView(discord.ui.View):
+    def __init__(self, db, user_id):
+        super().__init__(timeout=120)
+        self.add_item(ShopDropdown(db, user_id))
 
 class HelpView(discord.ui.View):
     def __init__(self):
@@ -292,6 +324,97 @@ class PokerCog(commands.Cog):
                 color=0xe74c3c
             )
             await ctx.send(embed=embed)
+    
+    @commands.command(name="shop", aliases=["store", "buy"])
+    async def shop(self, ctx):
+        embed = discord.Embed(
+            title="🏪 Casino Gift Shop",
+            description="Welcome to the high-roller lounge. Spend your hard-earned chips on cosmetics and table items here.",
+            color=0x9b59b6
+        )
+        embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/879/879757.png")
+        
+        view = ShopView(self.db, ctx.author.id)
+        await ctx.send(embed=embed, view=view)\
+
+    @commands.command(name="richest", aliases=["leaderboard", "top"])
+    async def richest(self, ctx):
+        top_players = self.db.get_top_players(limit=5)
+        
+        embed = discord.Embed(title="🏆 High Roller Leaderboard", color=0xffd700)
+        embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/3135/3135715.png")
+        
+        description = ""
+        medals = ["🥇", "🥈", "🥉", "🏅", "🏅"]
+        
+        for idx, (user_id, chips) in enumerate(top_players):
+            # Fetch the discord user object to get their display name
+            try:
+                user = await self.bot.fetch_user(int(user_id))
+                name = user.display_name
+            except:
+                name = f"Unknown User ({user_id})"
+                
+            description += f"{medals[idx]} **{name}** — 🪙 `{chips}`\n\n"
             
+        embed.description = description if description else "The vault is empty!"
+        await ctx.send(embed=embed)
+
+    @commands.command(name="pay", aliases=["tip", "give"])
+    async def pay(self, ctx, target: discord.Member, amount: int):
+        if amount <= 0:
+            return await ctx.send("❌ You must send a positive amount of chips.")
+        if target.id == ctx.author.id:
+            return await ctx.send("❌ You can't pay yourself!")
+            
+        success = self.db.transfer_chips(ctx.author.id, target.id, amount)
+        
+        if success:
+            await ctx.send(f"💸 **Transaction Complete!** {ctx.author.mention} transferred **{amount} chips** to {target.mention}.")
+        else:
+            await ctx.send("❌ **Transaction Failed.** You don't have enough chips!")
+
+    @commands.command(name="slots")
+    async def slots(self, ctx, bet: int):
+        if bet <= 0:
+            return await ctx.send("❌ Place a valid bet.")
+            
+        chips, _ = self.db.load_player(ctx.author.id)
+        if chips < bet:
+            return await ctx.send(f"❌ You only have {chips} chips.")
+            
+        import random
+        import asyncio
+        
+        emojis = ["🍒", "🍋", "🍉", "⭐", "💎"]
+        
+        # Deduct bet immediately
+        self.db.cursor.execute('UPDATE players SET chips = chips - ? WHERE user_id = ?', (bet, str(ctx.author.id)))
+        self.db.conn.commit()
+        
+        msg = await ctx.send("🎰 **Spinning the reels...**\n`[ 🔄 | 🔄 | 🔄 ]`")
+        await asyncio.sleep(1)
+        
+        result = [random.choice(emojis) for _ in range(3)]
+        
+        # Check payouts
+        if result[0] == result[1] == result[2]:
+            winnings = bet * 10
+            status = f"🔥 **JACKPOT!** You won **{winnings} chips!**"
+        elif result[0] == result[1] or result[1] == result[2] or result[0] == result[2]:
+            winnings = bet * 2
+            status = f"✨ **Minor Win!** You doubled your bet to **{winnings} chips!**"
+        else:
+            winnings = 0
+            status = f"💀 **Bust!** You lost your {bet} chips."
+            
+        # Give winnings if any
+        if winnings > 0:
+            self.db.cursor.execute('UPDATE players SET chips = chips + ? WHERE user_id = ?', (winnings, str(ctx.author.id)))
+            self.db.conn.commit()
+            
+        embed = discord.Embed(title="🎰 Casino Slots", description=f"**{ctx.author.display_name}** bet `{bet}` chips.\n\n# [ {result[0]} | {result[1]} | {result[2]} ]\n\n{status}", color=0xe67e22)
+        await msg.edit(content=None, embed=embed)        
+
 async def setup(bot):
     await bot.add_cog(PokerCog(bot))
