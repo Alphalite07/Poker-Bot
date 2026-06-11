@@ -41,7 +41,7 @@ class AdvancedPokerGame:
         if any(p.user_id == user_id for p in self.players): 
             return "EXISTS"
         
-        saved_chips, saved_wardrobe = self.db.load_player(user_id)
+        saved_chips, saved_wardrobe, _ = self.db.load_player(user_id)
         new_player = PokerPlayer(user_id, name, chips=saved_chips)
         new_player.wardrobe = ['🧥 Jacket', '👔 Shirt', '👖 Pants', '🧦 Socks', '🩲 Underwear'][:saved_wardrobe]
         self.players.append(new_player)

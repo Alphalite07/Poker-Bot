@@ -1,5 +1,8 @@
 import discord
 from discord.ext import commands
+from discord.ext import tasks  # <-- Make sure this is here!
+import config
+import random
 import asyncio
 from engine.game_state import AdvancedPokerGame
 from engine.card import CardArt
@@ -39,62 +42,82 @@ class RaiseModal(discord.ui.Modal, title='Raise Amount'):
 class HelpDropdown(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label='Commands', description='Master the table controls', emoji='⌨️'),
-            discord.SelectOption(label='Game Modes', description='Texas Holdem, Omaha & VIP Strip', emoji='🕹️'),
+            discord.SelectOption(label='Table Controls', description='Master the poker loops', emoji='🕹️'),
+            discord.SelectOption(label='Game Modes', description='Texas Holdem, Omaha & VIP Strip', emoji='🎴'),
             discord.SelectOption(label='Hand Rankings', description='What beats what at showdown?', emoji='🏆'),
-            discord.SelectOption(label='Casino Vault', description='Bankrolls, Dailies, and Economy', emoji='🏦')
+            discord.SelectOption(label='Casino MMO Economy', description='Shop, Slots, Inventories & Barter', emoji='🏦'),
+            discord.SelectOption(label='Polymarket Predictions', description='Server match prediction pools', emoji='🔮')
         ]
         super().__init__(placeholder='Choose a help category...', min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         embed = discord.Embed(color=0x1f8b4c)
         
-        if self.values[0] == 'Commands':
-            embed.title = "⌨️ Bot Commands"
+        if self.values[0] == 'Table Controls':
+            embed.title = "🕹️ Poker Table Controls"
             embed.description = (
-                "**Lobby & Games**\n"
-                "🟢 `!poker_create [mode]` - Opens a new table. Modes: `texas_holdem`, `omaha`, `strip`\n"
-                "🟢 `!join` - Grab an empty seat at the current table.\n"
-                "🟢 `!start` - The dealer pitches the cards and the game begins!\n\n"
-                "**Economy & Profile**\n"
-                "🟡 `!balance` (or `!bal`) - Check your total casino chips and wardrobe.\n"
-                "🟡 `!daily` - Claim your free 500-chip bailout every 24 hours.\n\n"
-                "**Utilities**\n"
-                "🔵 `!help` - Opens this interactive menu."
+                " Use these commands to coordinate your game lobbies:\n\n"
+                "🟢 `!poker_create [mode]` — Open a new lobby. Modes: `texas_holdem`, `omaha`, `strip`.\n"
+                "🟢 `!join` — Sit down at the open table (Max 8 players to prevent deck exhaustion).\n"
+                "🟢 `!start` — Close the lobby, deal the hole cards, and start the turn loops."
             )
         elif self.values[0] == 'Game Modes':
-            embed.title = "🕹️ Game Modes Explained"
+            embed.title = "🎴 Game Variants Explained"
             embed.description = (
                 "🤠 **Texas Hold'em (`texas_holdem`)**\n"
-                "The gold standard. You get **2 hole cards** and share **5 community cards**. Make the best 5-card hand.\n\n"
-                "🌪️ **Omaha (`omaha`)**\n"
-                "High action. You get **4 hole cards**. You *must* use exactly **2** of your hole cards and **3** community cards to win.\n\n"
+                "The gold standard. 2 private hole cards, 5 shared community cards. Form the strongest 5-card combination.\n\n"
+                "🌪 Honor **Omaha (`omaha`)**\n"
+                "High variance. 4 private hole cards. You **must** utilize exactly 2 cards from your hand and 3 from the community board to qualify at showdown.\n\n"
                 "👙 **Strip Poker (`strip`)**\n"
-                "*(Requires NSFW channel)*. No chips? No problem. Every player starts with 5 clothing items. Lose the hand, lose an item. The last one dressed wins!"
+                "*(Age-Restricted NSFW Channels Only)*. Players start with 5 clothing assets instead of cash. Lose the hand, lose an item (`🧥`, `👔`, `👖`). Last one dressed claims the table."
             )
         elif self.values[0] == 'Hand Rankings':
-            embed.title = "🏆 Poker Hand Rankings"
+            embed.title = "🏆 Official Hand Rankings"
             embed.description = (
                 "**1. Royal Flush** 👑 (`A♠ K♠ Q♠ J♠ 10♠`)\n"
-                "**2. Straight Flush** 🌟 (`9♥ 8♥ 7♥ 6♥ 5♥`)\n"
-                "**3. Four of a Kind** 🍀 (`8♣ 8♠ 8♦ 8♥ 4♠`)\n"
-                "**4. Full House** 🏠 (`J♥ J♣ J♠ 4♦ 4♠`)\n"
-                "**5. Flush** 💧 (5 cards of same suit)\n"
-                "**6. Straight** 🛤️ (5 cards in sequence)\n"
-                "**7. Three of a Kind** 🎲 (`7♠ 7♦ 7♣ K♥ 2♠`)\n"
-                "**8. Two Pair** ✌️ (`9♠ 9♥ 5♣ 5♦ A♠`)\n"
-                "**9. One Pair** 🍒 (`10♥ 10♣ Q♠ 4♦ 2♣`)\n"
-                "**10. High Card** 🃏 (Highest single card wins)"
+                "**2. Straight Flush** 🌟 (5 consecutive cards, matching suit)\n"
+                "**3. Four of a Kind** 🍀 (4 cards of identical mathematical rank)\n"
+                "**4. Full House** 🏠 (Three of a kind blended with a pair)\n"
+                "**5. Flush** 💧 (5 cards holding identical suit structures)\n"
+                "**6. Straight** 🛤️ (5 numerical sequential ranks across different suits)\n"
+                "**7. Three of a Kind** 🎲 (3 matching cards of identical rank)\n"
+                "**8. Two Pair** ✌️ (Two distinct ranking pairs)\n"
+                "**9. One Pair** 🍒 (Two cards sharing an identical rank)\n"
+                "**10. High Card** 🃏 (Highest card on deck breaks the tie)"
             )
-        elif self.values[0] == 'Casino Vault':
-            embed.title = "🏦 The Casino Economy"
+        elif self.values[0] == 'Casino MMO Economy':
+            embed.title = "🏦 Casino MMO & Vault System"
             embed.description = (
-                "Your chips are saved **permanently** to the local SQLite database. Even if the bot restarts, your bankroll is safe.\n\n"
-                "💸 **Betting:** If you run out of chips mid-game, you can go *All-In* and a side-pot will be mathematically created for you.\n"
-                "🎁 **Bailouts:** Hit rock bottom? Use `!daily` once a day to get a free 500 chips from the house."
+                "**Assets & Gambles**\n"
+                "💰 `!balance` (or `!bal`, `!inv`) — View your active chip stacks, inventory items, and pets.\n"
+                "🎁 `!daily` — Claim a 500 chip emergency bank injection once every 24 hours.\n"
+                "🎰 `!slots [wager]` — Roll the reel slot machine solo while waiting for a lobby.\n"
+                "🏆 `!richest` — Display the server-wide top 5 high-roller leaderboard rankings.\n\n"
+                "**Transactions & Trade**\n"
+                "🛍️ `!shop` — Browse and buy active companions (**Casino Cat**, **Poker Hound**) or the **Luck Ring**.\n"
+                "💸 `!pay [@user] [amount]` — Send a secure wire transfer of raw chips directly to another user.\n"
+                "⚖️ `!barter [@user] [chips] [item]` — Propose a trade to buy a physical item/pet from another player's vault."
+            )
+        elif self.values[0] == 'Polymarket Predictions':
+            embed.title = "🔮 Polymarket Prediction Engine"
+            embed.description = (
+                "Any server member can host peer-to-peer prediction markets for custom matches, events, or server lore:\n\n"
+                "📣 **`!match_create \"Question\" \"Option A\" \"Option B\"`**\n"
+                "Deploys a server-wide open pool frame for spectators to weigh in on.\n\n"
+                "🪙 **`!match_bet [Match ID] [A/B] [Amount]`**\n"
+                "Locks chips into the designated outcome pool. Odds adjust dynamically based on aggregate share size.\n\n"
+                "🏁 **`!match_resolve [Match ID] [A/B]`**\n"
+                "Triggers the resolution calculation script. Winners divide the entire combined pool proportionally."
             )
             
         await interaction.response.edit_message(embed=embed)
+
+class HelpView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+        self.add_item(HelpDropdown())
+
+
 class ShopDropdown(discord.ui.Select):
     def __init__(self, db, user_id):
         self.db = db
@@ -291,25 +314,29 @@ class PokerCog(commands.Cog):
         self.games = {}
         self.db = DatabaseManager()
 
-    @commands.command(name="balance", aliases=["bal", "stats", "chips"])
+    @commands.command(name="balance", aliases=["bal", "cash"])
     async def balance(self, ctx):
-        # 1. Pull their permanent stats from SQLite
-        chips, wardrobe = self.db.load_player(ctx.author.id)
+        # Catch all 3 values from the updated database method
+        chips, wardrobe, inventory = self.db.load_player(ctx.author.id)
         
-        # 2. Build a polished player ID card
         embed = discord.Embed(
-            title=f"🏦 Casino Vault",
-            description=f"Player record for **{ctx.author.display_name}**",
-            color=0xffd700 # Shiny gold
+            title=f"💰 {ctx.author.display_name}'s Casino Profile", 
+            color=0x2ecc71
         )
         
-        # Grab the user's profile picture dynamically
+        # Display Bankroll
+        embed.add_field(name="Wallet Vault", value=f"🪙 `{chips}` chips", inline=False)
+        
+        # Display Strip Mode Wardrobe Status
+        embed.add_field(name="Wardrobe Items Remaining", value=f"👔 `{wardrobe}/5` items left", inline=False)
+        
+        # Display Inventory & Companions
+        items_display = "\n".join([f"• `{item}`" for item in inventory]) if inventory else "*No pets or items held*"
+        embed.add_field(name="🎒 Vault Inventory", value=items_display, inline=False)
+        
         if ctx.author.display_avatar:
             embed.set_thumbnail(url=ctx.author.display_avatar.url)
             
-        embed.add_field(name="Total Chips", value=f"🪙 `{chips}`", inline=True)
-        embed.add_field(name="Wardrobe Items", value=f"👕 `{wardrobe} / 5`", inline=True)
-        
         await ctx.send(embed=embed)
 
     @commands.command(name="help")
@@ -399,17 +426,21 @@ class PokerCog(commands.Cog):
             )
             await ctx.send(embed=embed)
     
-    @commands.command(name="shop", aliases=["store", "buy"])
-    async def shop(self, ctx):
+    @commands.command(name="shop", aliases=["store", "market", "buy"])
+    async def open_mmo_shop(self, ctx):
         embed = discord.Embed(
-            title="🏪 Casino Gift Shop",
-            description="Welcome to the high-roller lounge. Spend your hard-earned chips on cosmetics and table items here.",
+            title="🐾 Casino Vault & Pet Emporium",
+            description=(
+                "Welcome to the high-roller lounge! Spend your hard-earned chips on "
+                "boosters, cosmetics, and companion pets here.\n\n"
+                "ℹ️ *Use the dropdown menu below to select and buy your item.*"
+            ),
             color=0x9b59b6
         )
         embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/879/879757.png")
         
-        view = ShopView(self.db, ctx.author.id)
-        await ctx.send(embed=embed, view=view)\
+        view = AdvancedShopView(self.db, ctx.author.id)
+        await ctx.send(embed=embed, view=view)
 
     @commands.command(name="richest", aliases=["leaderboard", "top"])
     async def richest(self, ctx):
@@ -449,11 +480,12 @@ class PokerCog(commands.Cog):
             await ctx.send("❌ **Transaction Failed.** You don't have enough chips!")
 
     @commands.command(name="slots")
+    @commands.cooldown(1, 5, commands.BucketType.user)
     async def slots(self, ctx, bet: int):
         if bet <= 0:
             return await ctx.send("❌ Place a valid bet.")
             
-        chips, _ = self.db.load_player(ctx.author.id)
+        chips, _, inventory = self.db.load_player(ctx.author.id)
         if chips < bet:
             return await ctx.send(f"❌ You only have {chips} chips.")
             
@@ -462,45 +494,108 @@ class PokerCog(commands.Cog):
         
         emojis = ["🍒", "🍋", "🍉", "⭐", "💎"]
         
-        # Deduct bet immediately
+        # Divert 2% to the global jackpot pool frame
+        tax = max(1, int(bet * 0.02))
         self.db.cursor.execute('UPDATE players SET chips = chips - ? WHERE user_id = ?', (bet, str(ctx.author.id)))
+        self.db.add_to_jackpot(tax)
         self.db.conn.commit()
         
-        msg = await ctx.send("🎰 **Spinning the reels...**\n`[ 🔄 | 🔄 | 🔄 ]`")
-        await asyncio.sleep(1)
+        msg = await ctx.send(f"🎰 **Spinning...** (Global Jackpot: 🪙 `{self.db.get_jackpot()}`)\n### `[ 🔄 | 🔄 | 🔄 ]`")
+        await asyncio.sleep(0.5)
         
-        result = [random.choice(emojis) for _ in range(3)]
+        r1 = random.choice(emojis)
+        await msg.edit(content=f"🎰 **Reel 1 Locked!**\n### `[ {r1} | 🔄 | 🔄 ]`")
+        await asyncio.sleep(0.5)
         
-        # Check payouts
-        if result[0] == result[1] == result[2]:
-            winnings = bet * 10
+        r2 = random.choice(emojis)
+        await msg.edit(content=f"🎰 **Reel 2 Locked!**\n### `[ {r1} | {r2} | 🔄 ]`")
+        await asyncio.sleep(0.5)
+        
+        r3 = random.choice(emojis)
+        result = [r1, r2, r3]
+        
+        has_luck_ring = "Luck Ring" in inventory
+        jackpot_won = False
+        winnings = 0
+        
+        # Check Progressive Mega Jackpot
+        if result[0] == result[1] == result[2] == "💎":
+            progressive_pool = self.db.get_jackpot()
+            winnings = bet * 10 + progressive_pool
+            self.db.reset_jackpot()
+            jackpot_won = True
+            status = f"👑 **MEGA PROGRESSIVE JACKPOT!!!** You won **🪙 {winnings} chips** and cleared the server vault!"
+        elif result[0] == result[1] == result[2]:
+            multiplier = 12 if has_luck_ring else 10
+            winnings = bet * multiplier
             status = f"🔥 **JACKPOT!** You won **{winnings} chips!**"
         elif result[0] == result[1] or result[1] == result[2] or result[0] == result[2]:
             winnings = bet * 2
-            status = f"✨ **Minor Win!** You doubled your bet to **{winnings} chips!**"
+            status = f"✨ **Minor Win!** You collected **{winnings} chips!**"
         else:
-            winnings = 0
-            status = f"💀 **Bust!** You lost your {bet} chips."
+            status = f"💀 **Bust!** Lost `{bet}` chips. (+`{tax}` funneled to Server Jackpot)"
             
-        # Give winnings if any
         if winnings > 0:
             self.db.cursor.execute('UPDATE players SET chips = chips + ? WHERE user_id = ?', (winnings, str(ctx.author.id)))
             self.db.conn.commit()
             
-        embed = discord.Embed(title="🎰 Casino Slots", description=f"**{ctx.author.display_name}** bet `{bet}` chips.\n\n# [ {result[0]} | {result[1]} | {result[2]} ]\n\n{status}", color=0xe67e22)
-        await msg.edit(content=None, embed=embed)        
-
+        embed = discord.Embed(
+            title="🎰 Casino Slots", 
+            description=f"**{ctx.author.display_name}** spin roster:\n\n# [ {result[0]} | {result[1]} | {result[2]} ]\n\n{status}", 
+            color=0xffd700 if jackpot_won else 0xe67e22
+        )
+        await msg.edit(content=None, embed=embed)
     # --- Upgraded MMO Interactions & Systems ---
 
-    @commands.command(name="store", aliases=["market"])
-    async def open_mmo_shop(self, ctx):
+    @commands.command(name="open", aliases=["lootbox", "crate"])
+    async def open_box(self, ctx):
+        cost = 500
+        chips, _, inventory = self.db.load_player(ctx.author.id)
+        
+        if chips < cost:
+            return await ctx.send(f"❌ A Mystery Lootbox costs `🪙 {cost}` chips. You only have `{chips}`.")
+            
+        import random
+        import asyncio
+        
+        # Deduct entry price configuration
+        self.db.cursor.execute('UPDATE players SET chips = chips - ? WHERE user_id = ?', (cost, str(ctx.author.id)))
+        self.db.conn.commit()
+        
+        # Frame Animation Data
+        box_msg = await ctx.send("📦 **Placing Mystery Crate on the table...**")
+        await asyncio.sleep(0.6)
+        await box_msg.edit(content="🔓 **Popping the locking hinges...**\n`[ ░░░░░░░░░░ ] 0%`")
+        await asyncio.sleep(0.5)
+        await box_msg.edit(content="✨ **Unboxing data payload structure...**\n`[ ████░░░░░░ ] 40%`")
+        await asyncio.sleep(0.5)
+        await box_msg.edit(content="⚡ **Revealing structural asset rarity...**\n`[ ████████░░ ] 80%`")
+        await asyncio.sleep(0.4)
+        
+        # Loot drop allocations
+        roll = random.randint(1, 100)
+        if roll <= 70:  # Common Tier
+            dropped_item = random.choice(["🍸 Martini", "👔 Designer Shirt", "🧥 Luxury Coat"])
+            color = 0x95a5a6
+            tier = "COMMON"
+        elif roll <= 95: # Rare Tier
+            dropped_item = random.choice(["💍 Luck Ring", "🐱 Casino Cat"])
+            color = 0x3498db
+            tier = "RARE"
+        else:           # Legendary Tier
+            dropped_item = random.choice(["静态 Display Skin", "🐶 Poker Hound", "🦊 Cyber Dragon"])
+            color = 0x9b59b6
+            tier = "✨ LEGENDARY ✨"
+            
+        inventory.append(dropped_item)
+        self.db.save_inventory(ctx.author.id, inventory)
+        
         embed = discord.Embed(
-            title="🐾 Casino Vault & Pet Emporium",
-            description="Acquire dynamic boosters and collectible companions to display on your server profile.",
-            color=0x9b59b6
+            title=f"🎁 Box Rarity Unboxed: {tier}",
+            description=f"🏆 {ctx.author.mention} unboxed a **`{dropped_item}`**!\n\n*Item added into your persistent vault profile container storage.*",
+            color=color
         )
-        view = AdvancedShopView(self.db, ctx.author.id)
-        await ctx.send(embed=embed, view=view)
+        await box_msg.edit(content=None, embed=embed)
 
     @commands.command(name="inventory", aliases=["inv", "items"])
     async def view_inventory(self, ctx):
@@ -572,6 +667,46 @@ class PokerCog(commands.Cog):
 
         resolution_report = self.db.resolve_match(match_id, winning_option)
         await ctx.send(content=resolution_report)
+
+    
+    
+
+    # Add inside your PokerCog __init__ setup method:
+    # self.voice_passive_income_loop.start()
+
+    @tasks.loop(minutes=1)
+    async def voice_passive_income_loop(self):
+        """Monitors all server voice channels and credits passive dividends for active companions"""
+        for guild in self.bot.guilds:
+            for vc in guild.voice_channels:
+                for member in vc.members:
+                    if member.bot: 
+                        continue
+                        
+                    chips, wardrobe, inventory = self.db.load_player(member.id)
+                    payout = 0
+                    
+                    if "Casino Cat" in inventory: 
+                        payout += 5
+                    if "Poker Hound" in inventory: 
+                        payout += 10
+                    if "Cyber Dragon" in inventory:
+                        payout += 25
+
+                    if payout > 0:
+                        self.db.cursor.execute('UPDATE players SET chips = chips + ? WHERE user_id = ?', (payout, str(member.id)))
+        self.db.conn.commit()
+
+    def cog_unload(self):
+        self.voice_passive_income_loop.cancel()
+
+    async def cog_command_error(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            await ctx.send(f"⏳ **Hold your horses, {ctx.author.display_name}!** You can spin again in **{error.retry_after:.1f} seconds**.")
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f"❌ **Missing Parameter!** Syntax requirement: `{ctx.prefix}{ctx.command.name} [amount/wager]`")
+        else:
+            raise error
 
 async def setup(bot):
     await bot.add_cog(PokerCog(bot))

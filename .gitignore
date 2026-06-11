@@ -1,4 +1,18 @@
+# discord-poker-bot/.gitignore
+
+# Secrets
 .env
+
+# Python Cache
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Virtual Environments
 venv/
+env/
+disenv/
+
+# Database
+*.db
+*.sqlite3
